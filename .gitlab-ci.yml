@@ -1,0 +1,38 @@
+# AI Model Risk Auditor — GitLab CI
+#
+# The 'ai_release_gate' stage is the control that blocks an unsafe model from
+# shipping: it runs the audit and fails the pipeline when the weighted risk score
+# exceeds AUDITOR_GATE_MAX_RISK, a critical module fails, or a control test
+# regresses. Point TARGET_VERSION at the model/prompt under review.
+
+stages:
+  - test
+  - audit
+
+variables:
+  AUDITOR_GATE_MAX_RISK: "10"
+  TARGET_VERSION: "v2"        # change to v1 to see the gate fail on purpose
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pipcache"
+
+default:
+  image: python:3.12-slim
+  before_script:
+    - pip install --quiet -r requirements.txt
+
+unit_tests:
+  stage: test
+  script:
+    - python -m pytest tests/ -q
+
+ai_release_gate:
+  stage: audit
+  script:
+    # Produce the validation report artifact for reviewers...
+    - python -m app.cli audit --version "$TARGET_VERSION" --report report.html --with-remediation
+    # ...then enforce the gate (non-zero exit fails the pipeline).
+    - python -m app.cli gate --version "$TARGET_VERSION" --max-risk "$AUDITOR_GATE_MAX_RISK"
+  artifacts:
+    when: always
+    paths:
+      - report.html
+    expire_in: 30 days

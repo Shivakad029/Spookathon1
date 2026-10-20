@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Secrets — never commit; keep the template only
+.env
+.env.*
+!.env.example
+output/
+*.db
+.pipcache/
+.pytest_cache/
