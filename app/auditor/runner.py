@@ -4,6 +4,7 @@ and (optionally) streams progress events for the live dashboard.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from ..target_bot.bot import Guardrails, ABCBankBot
 from . import attack_source as src
 from .judge import Finding, judge_pair, judge_single
 from .scoring import Scorecard, score
+
+log = logging.getLogger(__name__)
 
 ProgressCB = Callable[[dict], None]
 
@@ -76,6 +79,9 @@ def run_audit(bot_version: str = "v1", guardrails: Guardrails | None = None,
 
     cases = src.build_suite(modules=modules, max_jailbreaks=max_jailbreaks)
     titles = _module_titles()
+    log.info("Audit start: version=%s engine=%s guardrails=[%s] cases=%d modules=%s",
+             bot_version, bot.engine, ", ".join(guardrails.enabled()) or "none",
+             len(cases), modules or "all")
     if progress:
         progress({"event": "start", "bot_version": bot_version, "total": len(cases),
                   "guardrails": guardrails.enabled(), "engine": bot.engine,
@@ -86,14 +92,19 @@ def run_audit(bot_version: str = "v1", guardrails: Guardrails | None = None,
     for i, case in enumerate(cases, 1):
         f = _run_case(bot, case)
         findings.append(f)
+        log.debug("case %d/%d %s [%s/%s] -> %s via %s", i, len(cases), case.id,
+                  case.module, case.technique, "PASS" if f.passed else "FAIL", f.method)
         if progress:
             progress({"event": "case", "i": i, "total": len(cases), "module": case.module,
                       "case_id": case.id, "passed": f.passed, "control": f.control,
                       "method": f.method, "severity": f.severity})
     sc = score(findings, titles)
+    duration = time.time() - t0
+    log.info("Audit done: version=%s rating=%s risk=%.1f passed=%d/%d control_failures=%d in %.2fs",
+             bot_version, sc.rating, sc.risk_score, sc.passed, sc.total, sc.control_failures, duration)
     result = AuditResult(
         bot_version=bot_version, guardrails=guardrails.enabled(), engine=bot.engine,
-        pyrit_source=src.pyrit_source(), duration_s=time.time() - t0, scorecard=sc, findings=findings)
+        pyrit_source=src.pyrit_source(), duration_s=duration, scorecard=sc, findings=findings)
     if progress:
         progress({"event": "done", "scorecard": sc.to_dict()})
     return result

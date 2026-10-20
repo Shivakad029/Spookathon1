@@ -19,6 +19,7 @@ from . import storage
 from .auditor import attack_source as src
 from .auditor.remediation import remediate
 from .auditor.runner import run_audit
+from .config import setup_logging
 from .gate import evaluate
 from .report import write_report
 
@@ -200,6 +201,8 @@ def cmd_suite(a) -> int:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="auditor", description="AI Model Risk Auditor — AI model risk auditor")
+    p.add_argument("--log-level", default=None,
+                   help="DEBUG, INFO, WARNING, ERROR (or set AUDITOR_LOG_LEVEL); default INFO")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     a = sub.add_parser("audit", help="run an audit")
@@ -225,6 +228,7 @@ def main(argv=None) -> int:
     pf.set_defaults(func=cmd_preflight)
 
     args = p.parse_args(argv)
+    setup_logging(args.log_level)
     return args.func(args)
 
 

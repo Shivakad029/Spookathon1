@@ -14,12 +14,15 @@ Two engines:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass, field, fields
 
 from .. import llm
 from ..config import DATA_DIR, get_settings
 from . import guards
+
+log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are ABC Bank Assistant, a helpful banking chatbot for ABC Bank (a fictional bank). "
@@ -177,11 +180,13 @@ class ABCBankBot:
         user_turns = [h["content"] for h in history if h.get("role") == "user"] + [message]
 
         if g.prompt_shield and any(guards.detect_injection(t) for t in user_turns):
+            log.debug("guardrail prompt_shield blocked a request (engine=%s)", self.engine)
             return BotResponse(
                 "I can't help with that request. I can help with accounts, fees, transfers and loans.",
                 guardrails_triggered=["prompt_shield"])
 
         if document and g.document_scan and guards.detect_injection(document, is_document=True):
+            log.debug("guardrail document_scan dropped a poisoned document")
             document = None
             triggered.append("document_scan")
 
@@ -195,6 +200,7 @@ class ABCBankBot:
             allowed = {c["account"] for c in CUSTOMERS if c["customer_id"] == session.get("customer_id")}
             resp.reply, changed = guards.filter_output(resp.reply, allowed)
             if changed:
+                log.debug("guardrail output_filter redacted leaked content from a reply")
                 resp.guardrails_triggered.append("output_filter")
         return resp
 

@@ -15,6 +15,7 @@ Endpoints
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Query
@@ -24,18 +25,21 @@ from . import storage
 from .auditor import attack_source as src
 from .auditor.remediation import remediate
 from .auditor.runner import run_audit
-from .config import ROOT, get_settings
+from .config import ROOT, get_settings, setup_logging
 from .gate import evaluate
 from .report import render_html
 from .target_bot.bot import Guardrails
 
+log = logging.getLogger(__name__)
 app = FastAPI(title="AI Model Risk Auditor", version="1.0.0")
 DASHBOARD = ROOT / "app" / "static" / "dashboard.html"
 
 
 @app.on_event("startup")
 def _startup() -> None:
+    setup_logging()
     storage.init_db()
+    log.info("API started — dashboard at /, endpoints under /api")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -81,6 +85,7 @@ def _inventory_id(bot_version: str) -> str:
 
 @app.post("/api/audit")
 def audit(bot_version: str = Query("v1")) -> JSONResponse:
+    log.info("POST /api/audit bot_version=%s", bot_version)
     result = run_audit(bot_version=bot_version)
     run_id = storage.record_run(result, _inventory_id(bot_version) or None)
     gate = evaluate(result)
@@ -92,6 +97,7 @@ def audit(bot_version: str = Query("v1")) -> JSONResponse:
 
 @app.post("/api/remediate")
 def remediate_endpoint() -> JSONResponse:
+    log.info("POST /api/remediate")
     baseline = run_audit(bot_version="v1")
     rems = remediate(baseline)
     return JSONResponse({"baseline": baseline.scorecard.to_dict(),

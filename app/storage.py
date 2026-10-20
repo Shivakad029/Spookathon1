@@ -8,11 +8,14 @@ record of every audit run (score, rating, pass counts, full result JSON).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from .config import get_settings
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS inventory (
@@ -71,6 +74,7 @@ def init_db(seed: bool = True) -> None:
                 c.execute(
                     "INSERT OR IGNORE INTO inventory (id,name,owner,risk_tier,data_classification,endpoint) "
                     "VALUES (?,?,?,?,?,?)", row)
+    log.debug("database ready at %s (seed=%s)", get_settings().db_path, seed)
 
 
 def _now() -> str:
@@ -89,6 +93,8 @@ def record_run(result, inventory_id: str | None = None) -> int:
             c.execute(
                 "UPDATE inventory SET status='tested', last_tested=?, last_rating=?, last_risk_score=? WHERE id=?",
                 (_now(), sc.rating, sc.risk_score, inventory_id))
+        log.info("Recorded run #%d (version=%s rating=%s risk=%.1f) inventory=%s",
+                 cur.lastrowid, result.bot_version, sc.rating, sc.risk_score, inventory_id or "-")
         return cur.lastrowid
 
 

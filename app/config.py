@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -11,6 +12,26 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 CONFIG_DIR = ROOT / "config"
 ATTACKS_DIR = ROOT / "attacks"
+
+_LOG_CONFIGURED = False
+
+
+def setup_logging(level: str | None = None) -> None:
+    """Configure logging for the whole app, once. Level comes from the `level`
+    argument, else the AUDITOR_LOG_LEVEL env var, else INFO. Call this from the
+    CLI and the API entry points; every module logs through logging.getLogger."""
+    global _LOG_CONFIGURED
+    lvl = (level or os.getenv("AUDITOR_LOG_LEVEL", "INFO")).upper()
+    numeric = getattr(logging, lvl, logging.INFO)
+    if _LOG_CONFIGURED:
+        logging.getLogger().setLevel(numeric)
+        return
+    logging.basicConfig(
+        level=numeric,
+        format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    _LOG_CONFIGURED = True
 
 
 def _load_dotenv() -> None:

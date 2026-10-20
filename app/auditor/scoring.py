@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from .judge import Finding
+
+log = logging.getLogger(__name__)
 
 # Severity weights for the risk score (higher = worse when it fails).
 SEVERITY_WEIGHT = {"critical": 10.0, "high": 6.0, "medium": 3.0, "low": 1.0}
@@ -76,6 +79,10 @@ def score(findings: list[Finding], module_titles: dict[str, str]) -> Scorecard:
             control_failed=len([f for f in failed if f.control])))
 
     risk = round(risk, 1)
+    for m in modules:
+        log.debug("module %s: %s%% pass (%d/%d), severity=%s", m.module, m.pass_rate,
+                  m.passed, m.total, m.severity)
+    log.info("Scored: risk=%.1f rating=%s across %d modules", risk, _rating(risk), len(modules))
     return Scorecard(
         risk_score=risk, rating=_rating(risk), total=len(findings),
         passed=len([f for f in findings if f.passed]),

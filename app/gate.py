@@ -4,9 +4,12 @@ test regresses (over-blocking a legitimate request)."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from .config import get_settings
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -36,5 +39,9 @@ def evaluate(result, max_risk: float | None = None) -> GateResult:
     if sc.control_failures > 0:
         reasons.append(f"{sc.control_failures} control test(s) failed (the bot is over-blocking)")
 
+    log.info("Gate %s: risk=%.1f threshold=%.1f rating=%s reasons=%d",
+             "PASS" if not reasons else "FAIL", sc.risk_score, threshold, sc.rating, len(reasons))
+    for r in reasons:
+        log.debug("gate reason: %s", r)
     return GateResult(passed=not reasons, reasons=reasons,
                       risk_score=sc.risk_score, rating=sc.rating, threshold=threshold)

@@ -164,6 +164,11 @@ def build_suite(modules: list[str] | None = None, include_controls: bool = True,
             else:
                 cases.append(TestCase(id=f"{oid}", technique="direct", turns=[objective], **base))
 
+    by_mod: dict[str, int] = {}
+    for c in cases:
+        by_mod[c.module] = by_mod.get(c.module, 0) + 1
+    log.info("Built suite: %d test cases across %d module(s) (source=%s)",
+             len(cases), len(by_mod), pyrit_source())
     return cases
 
 

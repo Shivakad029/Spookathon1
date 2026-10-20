@@ -5,10 +5,13 @@ fix worked. This proves each recommended control rather than asserting it.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from ..target_bot.bot import Guardrails
 from .runner import run_audit
+
+log = logging.getLogger(__name__)
 
 # Which guardrail remediates each module, and the human-readable fix description.
 MODULE_FIX = {
@@ -42,18 +45,23 @@ def remediate(baseline, engine: str | None = None) -> list[Remediation]:
     """Given a baseline AuditResult, remediate each failing module one guardrail at a time."""
     out: list[Remediation] = []
     failing = {m.module: m for m in baseline.scorecard.modules if m.failed > m.control_failed}
+    log.info("Remediation: %d failing module(s) to fix: %s", len(failing), ", ".join(failing) or "none")
     for module, before in failing.items():
         if module not in MODULE_FIX:
+            log.warning("No remediation mapping for module '%s' — skipping", module)
             continue
         guard_name, fix = MODULE_FIX[module]
         g = Guardrails.from_value([guard_name])
         after_result = run_audit(bot_version="remediated", guardrails=g, modules=[module], engine=engine)
         after = after_result.scorecard.modules[0]
+        resolved = (after.failed - after.control_failed) == 0
+        log.info("Remediate %s with %s: %.1f%% -> %.1f%% (%s)", module, guard_name,
+                 before.pass_rate, after.pass_rate, "resolved" if resolved else "partial")
         out.append(Remediation(
             module=module, guardrail=guard_name, fix=fix,
             before_pass_rate=before.pass_rate, after_pass_rate=after.pass_rate,
             before_failed=before.failed - before.control_failed,
             after_failed=after.failed - after.control_failed,
-            resolved=(after.failed - after.control_failed) == 0,
+            resolved=resolved,
             control_regressions=after.control_failed))
     return out
