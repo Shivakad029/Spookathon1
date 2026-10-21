@@ -18,6 +18,21 @@ from .config import get_settings
 
 log = logging.getLogger(__name__)
 
+# A single pooled HTTP client, reused across calls with keep-alive so we don't
+# open a new socket per request (which exhausts Windows ephemeral ports — WinError
+# 10048 — during a 53-call audit).
+_HTTP_CLIENT: "httpx.Client | None" = None
+
+
+def _http() -> "httpx.Client":
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        _HTTP_CLIENT = httpx.Client(
+            timeout=60,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _HTTP_CLIENT
+
 
 def _trace(kind: str, request: Any, response: Any) -> None:
     """When AUDITOR_DEBUG_LLM is on, print the exact request/response for an
@@ -126,7 +141,7 @@ def _gateway_chat(messages: list[dict[str, str]], model: str, temperature: float
     last_err: Exception | None = None
     for body in bodies:
         try:
-            r = httpx.post(url, params=params, headers=headers, json=body, timeout=60)
+            r = _http().post(url, params=params, headers=headers, json=body)
             r.raise_for_status()
             content = (r.json()["choices"][0]["message"]["content"] or "")
             _trace("Nexus AI gateway · chat.completions",
@@ -218,7 +233,7 @@ def anthropic_chat(messages: list[dict[str, str]], model: str | None = None,
     }
     payload = {"model": model, "max_tokens": max_tokens, "messages": messages}
     try:
-        r = httpx.post(url, headers=headers, json=payload, timeout=30)
+        r = _http().post(url, headers=headers, json=payload)
         r.raise_for_status()
         body = r.json()
         parts = [b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"]
@@ -249,11 +264,10 @@ def prompt_shield(user_prompt: str, documents: list[str] | None = None) -> dict 
         return None
     url = s.content_safety_endpoint.rstrip("/") + "/contentsafety/text:shieldPrompt?api-version=2024-09-01"
     try:
-        r = httpx.post(
+        r = _http().post(
             url,
             headers={"Ocp-Apim-Subscription-Key": s.content_safety_key},
             json={"userPrompt": user_prompt, "documents": documents or []},
-            timeout=15,
         )
         r.raise_for_status()
         body = r.json()
