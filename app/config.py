@@ -67,6 +67,7 @@ class Settings:
     anthropic_endpoint: str       # Nexus AI Claude base, e.g. .../aix-anthropic-api/v1/anthropic
     anthropic_model: str          # e.g. claude-sonnet-5
     anthropic_version: str        # e.g. 2023-06-01
+    provider: str                 # "openai" (default) or "anthropic" — which family chat() uses
     content_safety_endpoint: str
     content_safety_key: str
     use_llm_judge: bool
@@ -94,6 +95,8 @@ class Settings:
 
     @property
     def llm_available(self) -> bool:
+        if self.provider == "anthropic":
+            return bool(self.anthropic_endpoint and self.azure_openai_key)
         has_creds = bool(self.azure_openai_key) or self.azure_auth_mode == "entra"
         return bool(self.azure_openai_endpoint and self.azure_openai_deployment and has_creds)
 
@@ -123,6 +126,7 @@ def get_settings() -> Settings:
         anthropic_endpoint=os.getenv("ANTHROPIC_GATEWAY_ENDPOINT", "").strip(),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
         anthropic_version=os.getenv("ANTHROPIC_VERSION", "2023-06-01").strip(),
+        provider=os.getenv("AUDITOR_PROVIDER", "openai").strip().lower(),
         content_safety_endpoint=os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", ""),
         content_safety_key=os.getenv("AZURE_CONTENT_SAFETY_KEY", ""),
         use_llm_judge=_flag("AUDITOR_USE_LLM_JUDGE"),

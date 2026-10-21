@@ -92,13 +92,18 @@ def cmd_ping(a) -> int:
     from .config import get_settings
 
     s = get_settings()
+    is_anthropic = s.provider == "anthropic"
+    active_endpoint = s.anthropic_endpoint if is_anthropic else s.azure_openai_endpoint
+    active_model = s.anthropic_model if is_anthropic else s.azure_openai_deployment
     print("\nConfiguration")
     print("   " + "-" * 50)
-    print(f"   endpoint        : {s.azure_openai_endpoint or '(not set)'}")
-    print(f"   deployment      : {s.azure_openai_deployment or '(not set)'}")
-    print(f"   auth mode       : {s.azure_auth_mode}")
+    print(f"   provider        : {s.provider}")
+    print(f"   endpoint        : {active_endpoint or '(not set)'}")
+    print(f"   model           : {active_model or '(not set)'}")
     print(f"   api key set     : {'yes' if s.azure_openai_key else 'no'}")
-    if s.use_gateway:
+    if is_anthropic:
+        style = f"APIM gateway · Anthropic Messages (header '{s.gateway_auth_header or 'mtb-client_id'}')"
+    elif s.use_gateway:
         style = f"APIM gateway (header '{s.gateway_auth_header}')"
     elif s.is_foundry_v1:
         style = "Foundry v1 (OpenAI client)"
@@ -114,7 +119,7 @@ def cmd_ping(a) -> int:
         print("   Fill in AZURE_OPENAI_* in .env and restart to use the live model.\n")
         return 1
 
-    print(f"\n   calling {s.azure_openai_deployment} ...")
+    print(f"\n   calling {active_model} ...")
     reply = llm.chat([{"role": "user", "content": "Reply with exactly: PONG"}], max_tokens=256)
     if reply is None:
         print("\n❌ LLM call FAILED — the app would fall back to deterministic logic.")

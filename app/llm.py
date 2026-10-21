@@ -160,6 +160,9 @@ def chat(messages: list[dict[str, str]], temperature: float = 0.0, max_tokens: i
     s = get_settings()
     if not s.llm_available:
         return None
+    if s.provider == "anthropic":
+        # Target the Claude model via the APIM Anthropic endpoint.
+        return anthropic_chat(messages, model=model, max_tokens=max_tokens, json_mode=json_mode)
     model = model or s.azure_openai_deployment
     if s.use_gateway:
         # APIM gateway: call it with a raw POST that mirrors the documented curl
@@ -216,9 +219,13 @@ def chat(messages: list[dict[str, str]], temperature: float = 0.0, max_tokens: i
 
 
 def anthropic_chat(messages: list[dict[str, str]], model: str | None = None,
-                   max_tokens: int = 64) -> str | None:
-    """Call the Nexus AI gateway's Claude (Anthropic Messages API) endpoint.
-    Auth is the team key in the custom header (same key as the OpenAI side).
+                   max_tokens: int = 64, json_mode: bool = False) -> str | None:
+    """Call the Nexus AI gateway's Claude (Anthropic Messages API) endpoint,
+    mirroring the documented curl. The team key is sent in the custom header.
+
+    The Messages API differs from OpenAI chat: `system` is a top-level field (not
+    a message), and `messages` must be user/assistant only, start with `user`, and
+    alternate. We split out system prompts and merge consecutive same-role turns.
     Returns the reply text, or None if not configured / on error."""
     s = get_settings()
     if not (s.anthropic_endpoint and s.azure_openai_key):
@@ -231,14 +238,30 @@ def anthropic_chat(messages: list[dict[str, str]], model: str | None = None,
         "anthropic-version": s.anthropic_version,
         "content-type": "application/json",
     }
-    payload = {"model": model, "max_tokens": max_tokens, "messages": messages}
+
+    system = "\n".join(m["content"] for m in messages if m.get("role") == "system")
+    convo: list[dict[str, str]] = []
+    for m in messages:
+        if m.get("role") not in ("user", "assistant"):
+            continue
+        if convo and convo[-1]["role"] == m["role"]:      # merge consecutive same-role turns
+            convo[-1]["content"] += "\n" + m["content"]
+        else:
+            convo.append({"role": m["role"], "content": m["content"]})
+    if not convo or convo[0]["role"] != "user":
+        convo.insert(0, {"role": "user", "content": "(begin)"})
+
+    payload: dict[str, Any] = {"model": model, "max_tokens": max(max_tokens, 512), "messages": convo}
+    if system:
+        payload["system"] = system
     try:
         r = _http().post(url, headers=headers, json=payload)
         r.raise_for_status()
         body = r.json()
         parts = [b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"]
         text = " ".join(p for p in parts if p).strip()
-        _trace("Nexus AI · Anthropic messages", {"url": url, "model": model, "messages": messages}, body)
+        _trace("Nexus AI · Anthropic messages",
+               {"url": url, "model": model, "system": system, "messages": convo}, body)
         return text
     except Exception as exc:
         log.warning("Anthropic gateway call failed: %s", exc)
