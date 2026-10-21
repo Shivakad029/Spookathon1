@@ -101,6 +101,43 @@ def _build_client():
     )
 
 
+def _gateway_chat(messages: list[dict[str, str]], model: str, temperature: float,
+                  max_tokens: int, json_mode: bool) -> str | None:
+    """Raw POST to the APIM gateway's OpenAI-compatible chat endpoint, mirroring the
+    documented curl: the team key in the custom header, content-type JSON, the
+    api-version query param, and NO Authorization header."""
+    s = get_settings()
+    url = s.azure_openai_endpoint.rstrip("/") + "/chat/completions"
+    params = {"api-version": s.azure_openai_api_version} if s.azure_openai_api_version else {}
+    headers = {s.gateway_auth_header: s.azure_openai_key, "content-type": "application/json"}
+
+    base: dict[str, Any] = {"model": model, "messages": messages}
+    if json_mode:
+        base["response_format"] = {"type": "json_object"}
+    dep = model.lower()
+    next_gen = dep.startswith(("gpt-5", "o1", "o3", "o4"))
+    cap = max(max_tokens, 2048) if next_gen else max_tokens
+    # Try progressively simpler bodies — endpoints differ on which token field they accept.
+    if next_gen:
+        bodies = [{**base, "max_completion_tokens": cap}, {**base, "max_tokens": cap}, dict(base)]
+    else:
+        bodies = [{**base, "max_tokens": max_tokens, "temperature": temperature}, dict(base)]
+
+    last_err: Exception | None = None
+    for body in bodies:
+        try:
+            r = httpx.post(url, params=params, headers=headers, json=body, timeout=60)
+            r.raise_for_status()
+            content = (r.json()["choices"][0]["message"]["content"] or "")
+            _trace("Nexus AI gateway · chat.completions",
+                   {"url": url, "params": params, "model": model, "messages": messages}, content)
+            return content
+        except Exception as e:  # noqa: BLE001 — try the next body shape
+            last_err = e
+    log.warning("Gateway chat call failed: %s", last_err)
+    return None
+
+
 def chat(messages: list[dict[str, str]], temperature: float = 0.0, max_tokens: int = 600,
          json_mode: bool = False, model: str | None = None) -> str | None:
     """Call the configured chat model. Returns None if not configured or on error.
@@ -109,6 +146,11 @@ def chat(messages: list[dict[str, str]], temperature: float = 0.0, max_tokens: i
     if not s.llm_available:
         return None
     model = model or s.azure_openai_deployment
+    if s.use_gateway:
+        # APIM gateway: call it with a raw POST that mirrors the documented curl
+        # exactly — ONLY the custom auth header + content-type, no Authorization
+        # header (the OpenAI SDK always sends Authorization, which the gateway rejects).
+        return _gateway_chat(messages, model, temperature, max_tokens, json_mode)
     try:
         client = _build_client()
         kwargs: dict[str, Any] = {}
