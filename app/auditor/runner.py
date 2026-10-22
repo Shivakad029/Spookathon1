@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import yaml
 
+from .. import llm
 from ..config import ATTACKS_DIR
 from ..target_bot.bot import Guardrails, ABCBankBot
 from . import attack_source as src
@@ -88,6 +89,7 @@ def run_audit(bot_version: str = "v1", guardrails: Guardrails | None = None,
                   "pyrit_source": src.pyrit_source()})
 
     findings: list[Finding] = []
+    llm.reset_tokens()
     t0 = time.time()
     for i, case in enumerate(cases, 1):
         f = _run_case(bot, case)
@@ -102,6 +104,10 @@ def run_audit(bot_version: str = "v1", guardrails: Guardrails | None = None,
     duration = time.time() - t0
     log.info("Audit done: version=%s rating=%s risk=%.1f passed=%d/%d control_failures=%d in %.2fs",
              bot_version, sc.rating, sc.risk_score, sc.passed, sc.total, sc.control_failures, duration)
+    tok = llm.token_usage()
+    if tok["calls"]:
+        log.info("LLM tokens: %d model call(s), in=%d out=%d total=%d",
+                 tok["calls"], tok["in"], tok["out"], tok["total"])
     result = AuditResult(
         bot_version=bot_version, guardrails=guardrails.enabled(), engine=bot.engine,
         pyrit_source=src.pyrit_source(), duration_s=duration, scorecard=sc, findings=findings)

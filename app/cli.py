@@ -37,6 +37,11 @@ def _print_scorecard(result) -> None:
     for m in sc.modules:
         print(f"   {m.module:18}{m.pass_rate:6}%  {m.failed - m.control_failed:5}  "
               f"{m.control_failed:5}  {m.severity}")
+    from . import llm
+    tok = llm.token_usage()
+    if tok["calls"]:
+        print(f"\n   live model usage: {tok['calls']} call(s), {tok['total']:,} tokens "
+              f"(in {tok['in']:,} / out {tok['out']:,})")
 
 
 def cmd_audit(a) -> int:

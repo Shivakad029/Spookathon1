@@ -11,6 +11,7 @@ import datetime
 import json
 import logging
 import sys
+from collections import Counter
 from typing import Any
 
 import httpx
@@ -18,6 +19,30 @@ import httpx
 from .config import get_settings
 
 log = logging.getLogger(__name__)
+
+# ---- token accounting -------------------------------------------------------
+# Running token usage for the live model. The runner resets it at the start of
+# each audit; the CLI and logs read it back. Mock mode never calls the model, so
+# this stays at zero. OpenAI-style responses report prompt/completion_tokens; the
+# Anthropic Messages API reports input/output_tokens — both normalised to in/out.
+_TOKENS: "Counter[str]" = Counter()
+
+
+def reset_tokens() -> None:
+    """Zero the token counter. Call at the start of an audit run."""
+    _TOKENS.clear()
+
+
+def _record_tokens(in_tok, out_tok) -> None:
+    _TOKENS["in"] += int(in_tok or 0)
+    _TOKENS["out"] += int(out_tok or 0)
+    _TOKENS["calls"] += 1
+
+
+def token_usage() -> dict:
+    """Totals since the last reset: in, out, total, and number of model calls."""
+    return {"in": _TOKENS["in"], "out": _TOKENS["out"],
+            "total": _TOKENS["in"] + _TOKENS["out"], "calls": _TOKENS["calls"]}
 
 # A single pooled HTTP client, reused across calls with keep-alive so we don't
 # open a new socket per request (which exhausts Windows ephemeral ports — WinError
@@ -144,7 +169,10 @@ def _gateway_chat(messages: list[dict[str, str]], model: str, temperature: float
         try:
             r = _http().post(url, params=params, headers=headers, json=body)
             r.raise_for_status()
-            content = (r.json()["choices"][0]["message"]["content"] or "")
+            data = r.json()
+            content = (data["choices"][0]["message"]["content"] or "")
+            u = data.get("usage", {}) or {}
+            _record_tokens(u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
             _trace("Nexus AI gateway · chat.completions",
                    {"url": url, "params": params, "model": model, "messages": messages}, content)
             return content
@@ -211,6 +239,9 @@ def chat(messages: list[dict[str, str]], temperature: float = 0.0, max_tokens: i
         if resp is None:
             raise last_exc or RuntimeError("no response")
         content = resp.choices[0].message.content or ""
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            _record_tokens(getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0))
         _trace("OpenAI · chat.completions",
                {"model": model, "messages": messages, **kwargs}, content)
         return content
@@ -259,6 +290,8 @@ def anthropic_chat(messages: list[dict[str, str]], model: str | None = None,
         r = _http().post(url, headers=headers, json=payload)
         r.raise_for_status()
         body = r.json()
+        u = body.get("usage", {}) or {}
+        _record_tokens(u.get("input_tokens", 0), u.get("output_tokens", 0))
         parts = [b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"]
         text = " ".join(p for p in parts if p).strip()
         _trace("Nexus AI · Anthropic messages",
