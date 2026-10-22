@@ -1,7 +1,8 @@
-"""Thin wrappers around Azure OpenAI and Azure AI Content Safety (Prompt Shields).
+"""Thin wrappers around the chat model (OpenAI-compatible, Azure Foundry v1, the
+Nexus AI APIM gateway, and the Anthropic Messages API).
 
-Both are optional. When credentials are missing, every function returns None and
-callers fall back to deterministic logic, so the demo always runs.
+When no model is configured, chat() returns None and callers fall back to
+deterministic logic, so the demo always runs.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ def _http() -> "httpx.Client":
 def _trace(kind: str, request: Any, response: Any) -> None:
     """When AUDITOR_DEBUG_LLM is on, print the exact request/response for an
     outbound AI call to stderr (and append to AUDITOR_LLM_LOG if set). This is
-    how you see the prompts/payloads going to Azure OpenAI and Content Safety."""
+    how you see the prompts/payloads going to the model."""
     s = get_settings()
     if not s.debug_llm:
         return
@@ -276,30 +277,4 @@ def chat_json(messages: list[dict[str, str]], **kwargs: Any) -> dict | None:
         return json.loads(raw)
     except json.JSONDecodeError:
         log.warning("LLM returned non-JSON output: %s", raw[:200])
-        return None
-
-
-def prompt_shield(user_prompt: str, documents: list[str] | None = None) -> dict | None:
-    """Azure AI Content Safety Prompt Shields. Returns
-    {"user_attack": bool, "document_attack": bool} or None when not configured."""
-    s = get_settings()
-    if not s.content_safety_available:
-        return None
-    url = s.content_safety_endpoint.rstrip("/") + "/contentsafety/text:shieldPrompt?api-version=2024-09-01"
-    try:
-        r = _http().post(
-            url,
-            headers={"Ocp-Apim-Subscription-Key": s.content_safety_key},
-            json={"userPrompt": user_prompt, "documents": documents or []},
-        )
-        r.raise_for_status()
-        body = r.json()
-        _trace("Azure AI Content Safety · Prompt Shields",
-               {"url": url, "payload": {"userPrompt": user_prompt, "documents": documents or []}}, body)
-        return {
-            "user_attack": bool(body.get("userPromptAnalysis", {}).get("attackDetected")),
-            "document_attack": any(d.get("attackDetected") for d in body.get("documentsAnalysis", [])),
-        }
-    except Exception as exc:
-        log.warning("Prompt Shields call failed: %s", exc)
         return None

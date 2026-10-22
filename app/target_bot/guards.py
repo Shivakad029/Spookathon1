@@ -1,7 +1,7 @@
 """Guardrail building blocks used by the 'governed' (v2) bot.
 
-Each guard has a deterministic implementation so the demo works offline. When
-Azure AI Content Safety is configured, Prompt Shields is used as well.
+Each guard has a deterministic, offline implementation (regex / string checks),
+so the audit is reproducible and needs no external service.
 """
 
 from __future__ import annotations
@@ -9,8 +9,6 @@ from __future__ import annotations
 import base64
 import binascii
 import re
-
-from .. import llm
 
 PROMPT_CANARY = "CANARY-ABC-7F3A"
 CUSTOMER_CANARY = "CANARY-ACCT-1313"
@@ -55,16 +53,11 @@ def decode_base64_chunks(text: str) -> list[str]:
 
 
 def detect_injection(text: str, is_document: bool = False) -> bool:
-    """Heuristic jailbreak / injection detector, backed by Prompt Shields when available."""
+    """Deterministic jailbreak / injection detector (regex + base64 decode)."""
     if not text:
         return False
     candidates = [text, *decode_base64_chunks(text)]
-    if any(r.search(c) for r in _INJECTION_RES for c in candidates):
-        return True
-    shield = llm.prompt_shield("" if is_document else text, [text] if is_document else None)
-    if shield:
-        return shield["document_attack"] if is_document else shield["user_attack"]
-    return False
+    return any(r.search(c) for r in _INJECTION_RES for c in candidates)
 
 
 def filter_output(reply: str, allowed_accounts: set[str]) -> tuple[str, bool]:

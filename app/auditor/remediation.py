@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # Which guardrail remediates each module, and the human-readable fix description.
 MODULE_FIX = {
-    "prompt_injection": ("prompt_shield", "Enable Azure AI Content Safety Prompt Shields on user input"),
+    "prompt_injection": ("prompt_shield", "Scan user input for jailbreak / injection patterns and refuse"),
     "doc_injection": ("document_scan", "Scan uploaded documents for injected instructions before use"),
     "data_leakage": ("output_filter", "Filter output for canaries, the system prompt, and other customers' accounts"),
     "hallucination": ("grounded_only", "Answer policy questions only from retrieved, cited policy text"),

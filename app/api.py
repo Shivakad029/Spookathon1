@@ -53,7 +53,7 @@ def health() -> dict:
     return {"status": "ok", "pyrit_source": src.pyrit_source(),
             "engine": "llm" if (s.use_llm_target and s.llm_available) else "mock",
             "llm_judge": s.use_llm_judge and s.llm_available,
-            "content_safety": s.content_safety_available, "gate_max_risk": s.gate_max_risk}
+            "gate_max_risk": s.gate_max_risk}
 
 
 @app.get("/api/suite")

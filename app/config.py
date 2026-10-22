@@ -68,8 +68,6 @@ class Settings:
     anthropic_model: str          # e.g. claude-sonnet-5
     anthropic_version: str        # e.g. 2023-06-01
     provider: str                 # "openai" (default) or "anthropic" — which family chat() uses
-    content_safety_endpoint: str
-    content_safety_key: str
     use_llm_judge: bool
     use_llm_target: bool
     debug_llm: bool
@@ -100,10 +98,6 @@ class Settings:
         has_creds = bool(self.azure_openai_key) or self.azure_auth_mode == "entra"
         return bool(self.azure_openai_endpoint and self.azure_openai_deployment and has_creds)
 
-    @property
-    def content_safety_available(self) -> bool:
-        return bool(self.content_safety_endpoint and self.content_safety_key)
-
 
 def _flag(name: str, default: bool = False) -> bool:
     # Tolerate a stray inline comment or trailing text: judge the first token only.
@@ -127,8 +121,6 @@ def get_settings() -> Settings:
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5").strip(),
         anthropic_version=os.getenv("ANTHROPIC_VERSION", "2023-06-01").strip(),
         provider=os.getenv("AUDITOR_PROVIDER", "openai").strip().lower(),
-        content_safety_endpoint=os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", ""),
-        content_safety_key=os.getenv("AZURE_CONTENT_SAFETY_KEY", ""),
         use_llm_judge=_flag("AUDITOR_USE_LLM_JUDGE"),
         use_llm_target=_flag("AUDITOR_USE_LLM_TARGET"),
         debug_llm=_flag("AUDITOR_DEBUG_LLM"),
